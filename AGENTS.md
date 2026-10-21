@@ -24,6 +24,9 @@ that uploads videos to YouTube through the YouTube Data API v3.
   (Conventional Commits check) and `release.yml` (release-please + binaries).
 - `openspec/`: change proposals (`changes/`) and the accepted specs (`specs/`); see
   "OpenSpec workflow".
+- `tests/`: integration tests (`cli.rs` runs the binary, `readme.rs` generates and checks the
+  README usage section).
+- `.githooks/`: versioned git hooks (`pre-commit` refreshes the README usage section).
 - `release-please-config.json`, `.release-please-manifest.json`: release automation; the manifest
   holds the last released version and is updated only by release-please.
 
@@ -36,6 +39,16 @@ cargo fmt --all
 cargo clippy --all-targets -- -D warnings
 cargo test
 ```
+
+Enable the versioned git hooks once per clone, so the README's generated usage section is
+refreshed and staged on every commit:
+
+```
+git config core.hooksPath .githooks
+```
+
+Without the hook, refresh it by hand with `UPDATE_README=1 cargo test --test readme`; CI fails
+when it is out of date.
 
 ## Code style
 
@@ -136,5 +149,10 @@ change's branch.
 
 ## Documentation
 
-- Keep `README.md` in sync with `yt-upload --help` when flags change.
+- The "Usage" block of `README.md` between `<!-- usage:start -->` and `<!-- usage:end -->` is
+  generated from the CLI help by `tests/readme.rs`; never edit it by hand.
+- Any change to how the CLI is used (commands, flags, environment variables, output, behavior)
+  must update the README prose and examples in the same PR: document new usage, remove usage that
+  no longer exists, and fix statements that changed. `cargo test` rejects example commands in
+  fenced blocks that no longer parse, but it cannot check the prose.
 - `CHANGELOG.md` is generated from PR titles, so write titles that make sense to users.

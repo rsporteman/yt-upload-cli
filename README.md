@@ -11,6 +11,7 @@ yt-upload upload video.mp4 --title "My video" --privacy unlisted --thumbnail cov
 - Title, description, tags, category, privacy, made-for-kids flag
 - Scheduled publishing (`--publish-at`)
 - Thumbnail and playlist in the same command
+- Defaults from environment variables, including ones set system-wide
 - Your credentials stay on your machine: no server in the middle
 
 ## Install
@@ -58,17 +59,63 @@ You use your own Google Cloud OAuth client, so the quota and the access are your
 ## Usage
 
 ```
-yt-upload upload <VIDEO> --title <TITLE> [OPTIONS]
-
-  -d, --description <TEXT>
-      --tags <a,b,c>
-  -p, --privacy <private|unlisted|public>   [default: private]
-      --category <ID>                       [default: 22 = People & Blogs]
-      --thumbnail <IMAGE>                   JPG or PNG, up to 2 MB
-      --playlist <PLAYLIST_ID>
-      --publish-at <RFC3339>                e.g. 2026-10-25T15:00:00Z
-      --made-for-kids
+yt-upload upload talk.mp4 --title "Conference talk" --description "Recorded live" --tags "rust,cli"
+yt-upload upload trailer.mp4 --title "Trailer" --publish-at 2026-10-25T15:00:00Z --playlist PLxxxxxxxx
+yt-upload upload short.mp4 --title "Short" --privacy public --category 10 --made-for-kids
 ```
+
+Results go to stdout, one line each, so scripts can parse them: `Uploaded: https://youtu.be/<id>`,
+then `Thumbnail set.` and `Added to playlist.` when requested. Progress, warnings and errors go
+to stderr. A non-zero exit code means the command failed.
+
+All commands and options (generated from `yt-upload --help`):
+
+<!-- usage:start -->
+<!-- Generated from the CLI help; refresh with: UPDATE_README=1 cargo test --test readme -->
+
+`yt-upload --help`
+
+```
+Upload videos to YouTube from the command line
+
+Usage: yt-upload [OPTIONS] <COMMAND>
+
+Commands:
+  auth        Authorize a YouTube account and show the connected channel
+  upload      Upload a video
+  config-dir  Print the config folder path
+  help        Print this message or the help of the given subcommand(s)
+
+Options:
+      --config-dir <CONFIG_DIR>  Folder holding client_secret.json and the saved token [default: <config dir>/yt-upload-cli] [env: YT_UPLOAD_CLI_HOME]
+  -h, --help                     Print help
+  -V, --version                  Print version
+```
+
+`yt-upload upload --help`
+
+```
+Upload a video
+
+Usage: yt-upload upload [OPTIONS] --title <TITLE> <VIDEO>
+
+Arguments:
+  <VIDEO>  Video file to upload
+
+Options:
+      --config-dir <CONFIG_DIR>    Folder holding client_secret.json and the saved token [default: <config dir>/yt-upload-cli] [env: YT_UPLOAD_CLI_HOME]
+  -t, --title <TITLE>              Video title
+  -d, --description <DESCRIPTION>  Video description [default: ""]
+      --tags <TAGS>                Comma-separated tags [env: YT_UPLOAD_CLI_TAGS] [default: ""]
+  -p, --privacy <PRIVACY>          Who can watch the video [env: YT_UPLOAD_CLI_PRIVACY] [default: private] [possible values: private, unlisted, public]
+      --category <CATEGORY>        Category id (22 = People & Blogs) [env: YT_UPLOAD_CLI_CATEGORY] [default: 22]
+      --thumbnail <THUMBNAIL>      Thumbnail image (JPG or PNG, up to 2 MB)
+      --playlist <PLAYLIST>        Playlist id to add the video to [env: YT_UPLOAD_CLI_PLAYLIST]
+      --publish-at <PUBLISH_AT>    Schedule publishing (RFC 3339, e.g. 2026-10-25T15:00:00Z); forces private until then
+      --made-for-kids              Mark the video as made for kids [env: YT_UPLOAD_CLI_MADE_FOR_KIDS]
+  -h, --help                       Print help
+```
+<!-- usage:end -->
 
 ## Environment variables
 

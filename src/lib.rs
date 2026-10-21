@@ -27,7 +27,11 @@ const UPLOAD_API: &str = "https://www.googleapis.com/upload/youtube/v3";
 const CHUNK_SIZE: usize = 32 * 256 * 1024;
 
 #[derive(Parser, Debug)]
-#[command(version, about = "Upload videos to YouTube from the command line")]
+#[command(
+    name = "yt-upload",
+    version,
+    about = "Upload videos to YouTube from the command line"
+)]
 pub struct Cli {
     /// Folder holding client_secret.json and the saved token
     /// [default: <config dir>/yt-upload-cli]
@@ -52,13 +56,16 @@ pub enum Command {
 pub struct UploadArgs {
     /// Video file to upload
     pub video: PathBuf,
+    /// Video title
     #[arg(short, long)]
     pub title: String,
+    /// Video description
     #[arg(short, long, default_value = "")]
     pub description: String,
     /// Comma-separated tags
     #[arg(long, env = "YT_UPLOAD_CLI_TAGS", default_value = "")]
     pub tags: String,
+    /// Who can watch the video
     #[arg(short, long, env = "YT_UPLOAD_CLI_PRIVACY", value_enum, default_value_t = Privacy::Private)]
     pub privacy: Privacy,
     /// Category id (22 = People & Blogs)

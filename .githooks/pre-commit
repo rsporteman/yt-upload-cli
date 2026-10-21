@@ -1,0 +1,10 @@
+#!/bin/sh
+# Keeps the generated "Usage" section of README.md in sync with the CLI help.
+# Enable once per clone: git config core.hooksPath .githooks
+set -e
+if ! git diff --quiet -- README.md; then
+  echo "pre-commit: README.md has unstaged changes; stage or stash them first." >&2
+  exit 1
+fi
+UPDATE_README=1 cargo test --quiet --test readme
+git add README.md
