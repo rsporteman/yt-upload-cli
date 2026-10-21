@@ -25,4 +25,4 @@
 ## 6. Integration checks
 
 - [x] 6.1 Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings`, `cargo test` and the AGENTS.md coverage command; verify all pass and coverage stays at or above 95%
-- [ ] 6.2 Open a PR titled `docs: generate the readme usage section from the cli help` explaining the hook opt-in and the new tests; verify CI is green on Linux, Windows and macOS (proving the generated text is identical across OSes) and the PR-title check passes
+- [x] 6.2 Open a PR titled `docs: generate the readme usage section from the cli help` explaining the hook opt-in and the new tests; verify CI is green on Linux, Windows and macOS (proving the generated text is identical across OSes) and the PR-title check passes
