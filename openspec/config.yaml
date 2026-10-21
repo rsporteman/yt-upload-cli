@@ -1,5 +1,9 @@
 schema: spec-driven
 
+rules:
+  tasks:
+    - Label manual test tasks "(manual, non-blocking)"; they never gate other tasks, the PR or the archive (see AGENTS.md, Testing and coverage).
+
 # Project context (optional)
 # This is shown to AI when creating artifacts.
 # Add your tech stack, conventions, style guides, domain knowledge, etc.
