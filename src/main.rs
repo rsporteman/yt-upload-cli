@@ -4,12 +4,11 @@
 mod oauth;
 
 use anyhow::Result;
-use clap::Parser;
-use yt_upload_cli::{Api, Cli, Command, auth_message, config_dir};
+use yt_upload_cli::{Api, Command, auth_message, config_dir, env, parse_cli};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cli = Cli::parse();
+    let cli = parse_cli(std::env::args_os(), env::os_lookup).unwrap_or_else(|e| e.exit());
     let dir = config_dir(cli.config_dir)?;
     match cli.command {
         Command::ConfigDir => println!("{}", dir.display()),

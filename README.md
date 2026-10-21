@@ -70,6 +70,36 @@ yt-upload upload <VIDEO> --title <TITLE> [OPTIONS]
       --made-for-kids
 ```
 
+## Environment variables
+
+Options you repeat on every upload can come from the environment instead:
+
+| Variable | Option |
+|---|---|
+| `YT_UPLOAD_CLI_HOME` | `--config-dir` |
+| `YT_UPLOAD_CLI_PRIVACY` | `--privacy` |
+| `YT_UPLOAD_CLI_CATEGORY` | `--category` |
+| `YT_UPLOAD_CLI_TAGS` | `--tags` |
+| `YT_UPLOAD_CLI_PLAYLIST` | `--playlist` |
+| `YT_UPLOAD_CLI_MADE_FOR_KIDS` | `--made-for-kids` (`true`/`false`, `1`/`0`, `yes`/`no`, `on`/`off`) |
+
+The video, title, description, thumbnail and publish time are always given on the command line.
+An empty variable counts as unset.
+
+Each option uses the first value found: command-line flag, the current environment, the
+environment saved by your operating system, then the built-in default. So a variable you set
+globally works even in a terminal, scheduler or agent that was started before you set it:
+
+- **Windows**: `setx YT_UPLOAD_CLI_PRIVACY unlisted` (or *Settings → System → About → Advanced
+  system settings → Environment Variables*). User variables win over system ones; `%VAR%`
+  references are expanded.
+- **macOS**: `launchctl setenv YT_UPLOAD_CLI_PRIVACY unlisted`.
+- **Linux**: add `YT_UPLOAD_CLI_PRIVACY=unlisted` to a file in `~/.config/environment.d/`
+  (e.g. `yt-upload.conf`), or to `/etc/environment` for all users.
+
+Variables exported only in shell startup files (`.bashrc`, `.zshrc`, PowerShell profile) are seen
+only by programs started from that shell; yt-upload never reads or runs those files.
+
 ## Limits to know
 
 - **Unaudited projects upload as private.** Until your Google Cloud project passes YouTube's
