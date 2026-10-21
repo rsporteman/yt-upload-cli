@@ -14,6 +14,7 @@ The CLI SHALL accept the following environment variables, each equivalent to the
 | Variable | Option |
 |---|---|
 | `YT_UPLOAD_CLI_HOME` | `--config-dir` (all commands) |
+| `YT_UPLOAD_CLI_ACCOUNT` | `--account` (`auth` and `upload`) |
 | `YT_UPLOAD_CLI_PRIVACY` | `upload --privacy` |
 | `YT_UPLOAD_CLI_CATEGORY` | `upload --category` |
 | `YT_UPLOAD_CLI_TAGS` | `upload --tags` |
@@ -36,6 +37,10 @@ case-insensitively.
 #### Scenario: Made for kids from the environment
 - **WHEN** `YT_UPLOAD_CLI_MADE_FOR_KIDS=yes` is set and the user uploads without `--made-for-kids`
 - **THEN** the video is declared as made for kids
+
+#### Scenario: Account from the environment
+- **WHEN** accounts `personal` and `work` exist, `YT_UPLOAD_CLI_ACCOUNT=work` is set and the user uploads without `--account`
+- **THEN** the video is uploaded with the `work` account
 
 #### Scenario: Per-video values are not taken from the environment
 - **WHEN** a variable such as `YT_UPLOAD_CLI_TITLE` is set and the user runs `yt-upload upload v.mp4` without `--title`
