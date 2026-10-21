@@ -5,8 +5,8 @@
 
 use std::path::PathBuf;
 
-use clap::{CommandFactory, Parser};
 use clap::error::ErrorKind;
+use clap::{CommandFactory, Parser};
 use yt_upload_cli::Cli;
 
 const START: &str = "<!-- usage:start -->";
@@ -182,18 +182,38 @@ fn replaces_only_between_markers() {
         replace_usage(&readme, "NEW").unwrap(),
         "intro\nNEW\noutro\n"
     );
-    assert!(replace_usage("no markers", "x").unwrap_err().contains("exactly once"));
+    assert!(
+        replace_usage("no markers", "x")
+            .unwrap_err()
+            .contains("exactly once")
+    );
     let twice = format!("{START}{END}{START}{END}");
-    assert!(replace_usage(&twice, "x").unwrap_err().contains("exactly once"));
+    assert!(
+        replace_usage(&twice, "x")
+            .unwrap_err()
+            .contains("exactly once")
+    );
     let reversed = format!("{END}{START}");
-    assert!(replace_usage(&reversed, "x").unwrap_err().contains("before"));
+    assert!(
+        replace_usage(&reversed, "x")
+            .unwrap_err()
+            .contains("before")
+    );
 }
 
 #[test]
 fn splits_quoted_words() {
     assert_eq!(
         split_words(r#"yt-upload upload v.mp4 --title "My video"  -p public"#),
-        ["yt-upload", "upload", "v.mp4", "--title", "My video", "-p", "public"]
+        [
+            "yt-upload",
+            "upload",
+            "v.mp4",
+            "--title",
+            "My video",
+            "-p",
+            "public"
+        ]
     );
     assert_eq!(split_words(r#"a """#), ["a", ""]);
 }
