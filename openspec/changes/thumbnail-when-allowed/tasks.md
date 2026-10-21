@@ -19,4 +19,4 @@
 
 - [x] 4.1 Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings`, `cargo test` and the AGENTS.md `cargo llvm-cov ... --fail-under-lines 95` command; verify all pass
 - [ ] 4.2 (Skipped by maintainer decision on 2026-10-21; only mock-server tests) Manual test on a real channel with `--privacy private`: upload with a PNG thumbnail and confirm either `Thumbnail set.` or the warning with exit 0 (on an unverified channel), then delete the test video in YouTube Studio
-- [ ] 4.3 Open a PR titled `feat: set the thumbnail only when the channel allows it` describing behavior, tests and the manual check; verify CI (matrix, coverage, PR title) is green
+- [x] 4.3 Open a PR titled `feat: set the thumbnail only when the channel allows it` describing behavior, tests and the manual check; verify CI (matrix, coverage, PR title) is green
