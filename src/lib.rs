@@ -2,10 +2,17 @@
 //! The interactive OAuth flow lives in the binary (`src/oauth.rs`); everything here is testable
 //! against a mock server.
 
+pub mod env;
+
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::builder::BoolishValueParser;
+use clap::error::ErrorKind;
+use clap::parser::ValueSource;
+use clap::{Arg, ArgMatches, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
+use env::Persisted;
 use reqwest::{Client, StatusCode, header};
 use serde_json::{Value, json};
 use tokio::io::AsyncReadExt;
@@ -50,24 +57,24 @@ pub struct UploadArgs {
     #[arg(short, long, default_value = "")]
     pub description: String,
     /// Comma-separated tags
-    #[arg(long, default_value = "")]
+    #[arg(long, env = "YT_UPLOAD_CLI_TAGS", default_value = "")]
     pub tags: String,
-    #[arg(short, long, value_enum, default_value_t = Privacy::Private)]
+    #[arg(short, long, env = "YT_UPLOAD_CLI_PRIVACY", value_enum, default_value_t = Privacy::Private)]
     pub privacy: Privacy,
     /// Category id (22 = People & Blogs)
-    #[arg(long, default_value = "22")]
+    #[arg(long, env = "YT_UPLOAD_CLI_CATEGORY", default_value = "22")]
     pub category: String,
     /// Thumbnail image (JPG or PNG, up to 2 MB)
     #[arg(long)]
     pub thumbnail: Option<PathBuf>,
     /// Playlist id to add the video to
-    #[arg(long)]
+    #[arg(long, env = "YT_UPLOAD_CLI_PLAYLIST")]
     pub playlist: Option<String>,
     /// Schedule publishing (RFC 3339, e.g. 2026-10-25T15:00:00Z); forces private until then
     #[arg(long)]
     pub publish_at: Option<String>,
     /// Mark the video as made for kids
-    #[arg(long)]
+    #[arg(long, env = "YT_UPLOAD_CLI_MADE_FOR_KIDS", value_parser = BoolishValueParser::new())]
     pub made_for_kids: bool,
 }
 
@@ -85,6 +92,93 @@ impl Privacy {
             Privacy::Unlisted => "unlisted",
             Privacy::Public => "public",
         }
+    }
+}
+
+const HOME_VAR: &str = "YT_UPLOAD_CLI_HOME";
+const PRIVACY_VAR: &str = "YT_UPLOAD_CLI_PRIVACY";
+const CATEGORY_VAR: &str = "YT_UPLOAD_CLI_CATEGORY";
+const TAGS_VAR: &str = "YT_UPLOAD_CLI_TAGS";
+const PLAYLIST_VAR: &str = "YT_UPLOAD_CLI_PLAYLIST";
+const MADE_FOR_KIDS_VAR: &str = "YT_UPLOAD_CLI_MADE_FOR_KIDS";
+
+/// Parses the command line. Precedence per option: flag, process environment (clap), then
+/// `lookup` (the OS-persisted environment), then the built-in default.
+pub fn parse_cli<I, T>(
+    args: I,
+    lookup: impl Fn(&str) -> Option<Persisted>,
+) -> Result<Cli, clap::Error>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString> + Clone,
+{
+    let matches = command().try_get_matches_from(args)?;
+    let mut cli = Cli::from_arg_matches(&matches)?;
+    let fallback = |m: &ArgMatches, id: &str, var: &str| {
+        if matches!(m.value_source(id), None | Some(ValueSource::DefaultValue)) {
+            lookup(var).filter(|p| !p.value.is_empty())
+        } else {
+            None
+        }
+    };
+
+    if let Some(p) = fallback(&matches, "config_dir", HOME_VAR) {
+        cli.config_dir = Some(p.value.into());
+    }
+    if let (Command::Upload(args), Some(("upload", m))) = (&mut cli.command, matches.subcommand()) {
+        if let Some(p) = fallback(m, "privacy", PRIVACY_VAR) {
+            args.privacy = Privacy::from_str(&p.value, true)
+                .map_err(|_| invalid_persisted(PRIVACY_VAR, &p, "private, unlisted, public"))?;
+        }
+        if let Some(p) = fallback(m, "category", CATEGORY_VAR) {
+            args.category = p.value;
+        }
+        if let Some(p) = fallback(m, "tags", TAGS_VAR) {
+            args.tags = p.value;
+        }
+        if let Some(p) = fallback(m, "playlist", PLAYLIST_VAR) {
+            args.playlist = Some(p.value);
+        }
+        if let Some(p) = fallback(m, "made_for_kids", MADE_FOR_KIDS_VAR) {
+            args.made_for_kids = parse_bool(&p.value).ok_or_else(|| {
+                invalid_persisted(MADE_FOR_KIDS_VAR, &p, "true, false, 1, 0, yes, no, on, off")
+            })?;
+        }
+    }
+    Ok(cli)
+}
+
+/// The clap command, ignoring variables that are set but empty: clap would pass them on as an
+/// empty value (an error for most options), while users expect "empty" to mean "unset".
+fn command() -> clap::Command {
+    fn unset_if_empty(arg: Arg) -> Arg {
+        match arg.get_env() {
+            Some(var) if std::env::var_os(var).is_some_and(|v| v.is_empty()) => {
+                arg.env(None::<&'static str>)
+            }
+            _ => arg,
+        }
+    }
+    Cli::command()
+        .mut_args(unset_if_empty)
+        .mut_subcommand("upload", |s| s.mut_args(unset_if_empty))
+}
+
+fn invalid_persisted(var: &str, p: &Persisted, allowed: &str) -> clap::Error {
+    clap::Error::raw(
+        ErrorKind::InvalidValue,
+        format!(
+            "invalid value '{}' for {var} in the OS environment ({}); possible values: {allowed}\n",
+            p.value, p.source
+        ),
+    )
+}
+
+fn parse_bool(value: &str) -> Option<bool> {
+    match value.to_ascii_lowercase().as_str() {
+        "true" | "1" | "yes" | "on" => Some(true),
+        "false" | "0" | "no" | "off" => Some(false),
+        _ => None,
     }
 }
 
@@ -427,6 +521,140 @@ mod tests {
         assert!(matches!(cli.command, Command::Auth));
         assert_eq!(cli.config_dir, Some(PathBuf::from("x")));
         assert!(matches!(parse(&["config-dir"]).command, Command::ConfigDir));
+    }
+
+    /// `parse_cli` with a fake OS environment.
+    fn parse_with(args: &[&str], os_env: &[(&str, &str)]) -> Result<Cli, clap::Error> {
+        let lookup = |name: &str| {
+            os_env
+                .iter()
+                .find(|(k, _)| *k == name)
+                .map(|(_, v)| Persisted {
+                    value: (*v).to_owned(),
+                    source: "/etc/environment",
+                })
+        };
+        parse_cli(
+            std::iter::once("yt-upload").chain(args.iter().copied()),
+            lookup,
+        )
+    }
+
+    fn upload_of(cli: Cli) -> UploadArgs {
+        match cli.command {
+            Command::Upload(a) => *a,
+            other => panic!("expected upload, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn os_environment_fills_unset_options() {
+        let cli = parse_with(
+            &["upload", "v.mp4", "-t", "T"],
+            &[
+                (HOME_VAR, "os-home"),
+                (PRIVACY_VAR, "Unlisted"),
+                (CATEGORY_VAR, "10"),
+                (TAGS_VAR, "a,b"),
+                (PLAYLIST_VAR, "PL1"),
+                (MADE_FOR_KIDS_VAR, "yes"),
+                ("YT_UPLOAD_CLI_TITLE", "ignored"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(cli.config_dir, Some(PathBuf::from("os-home")));
+        let a = upload_of(cli);
+        assert_eq!(a.title, "T");
+        assert_eq!(a.privacy, Privacy::Unlisted);
+        assert_eq!(a.category, "10");
+        assert_eq!(a.tags, "a,b");
+        assert_eq!(a.playlist.as_deref(), Some("PL1"));
+        assert!(a.made_for_kids);
+    }
+
+    #[test]
+    fn flags_beat_os_environment() {
+        let cli = parse_with(
+            &[
+                "--config-dir",
+                "flag-home",
+                "upload",
+                "v.mp4",
+                "-t",
+                "T",
+                "-p",
+                "public",
+                "--category",
+                "20",
+                "--made-for-kids",
+            ],
+            &[
+                (HOME_VAR, "os-home"),
+                (PRIVACY_VAR, "secret"),
+                (CATEGORY_VAR, "10"),
+                (MADE_FOR_KIDS_VAR, "maybe"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(cli.config_dir, Some(PathBuf::from("flag-home")));
+        let a = upload_of(cli);
+        assert_eq!(a.privacy, Privacy::Public);
+        assert_eq!(a.category, "20");
+        assert!(a.made_for_kids);
+    }
+
+    #[test]
+    fn invalid_os_values_name_variable_and_source() {
+        let err = parse_with(&["upload", "v.mp4", "-t", "T"], &[(PRIVACY_VAR, "secret")])
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("'secret' for YT_UPLOAD_CLI_PRIVACY in the OS environment"));
+        assert!(err.contains("(/etc/environment)"));
+        assert!(err.contains("private, unlisted, public"));
+        let err = parse_with(
+            &["upload", "v.mp4", "-t", "T"],
+            &[(MADE_FOR_KIDS_VAR, "maybe")],
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("YT_UPLOAD_CLI_MADE_FOR_KIDS"));
+    }
+
+    #[test]
+    fn empty_os_values_and_defaults() {
+        let a = upload_of(
+            parse_with(
+                &["upload", "v.mp4", "-t", "T"],
+                &[(PRIVACY_VAR, ""), (MADE_FOR_KIDS_VAR, "off")],
+            )
+            .unwrap(),
+        );
+        assert_eq!(a.privacy, Privacy::Private);
+        assert!(!a.made_for_kids);
+    }
+
+    #[test]
+    fn title_is_never_read_from_the_environment() {
+        let err = parse_with(&["upload", "v.mp4"], &[("YT_UPLOAD_CLI_TITLE", "T")]).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn other_commands_only_use_the_home_variable() {
+        let cli = parse_with(&["config-dir"], &[(HOME_VAR, "os-home")]).unwrap();
+        assert!(matches!(cli.command, Command::ConfigDir));
+        assert_eq!(cli.config_dir, Some(PathBuf::from("os-home")));
+    }
+
+    #[test]
+    fn parses_booleans() {
+        for v in ["true", "1", "YES", "on"] {
+            assert_eq!(parse_bool(v), Some(true));
+        }
+        for v in ["False", "0", "no", "OFF"] {
+            assert_eq!(parse_bool(v), Some(false));
+        }
+        assert_eq!(parse_bool("maybe"), None);
     }
 
     #[test]
