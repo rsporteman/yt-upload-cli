@@ -128,6 +128,16 @@ change's branch.
 - Test HTTP calls against a local mock server (`wiremock`) using `Api::with_endpoints`.
   Never hit the real YouTube API in automated tests. Manual tests that upload a video must use
   `--privacy private` and be cleaned up afterwards.
+- **Manual tests never block the flow.** Automated tests and CI are the merge gate; manual tests
+  (real Google accounts, a browser, the live Pages site after a merge) are extra confidence. When
+  an agent cannot run one, it does not pause or wait. Instead it:
+  - leaves the task unchecked with `(manual, not run: <reason>)`;
+  - lists the test as pending in the PR description, with the exact steps for the maintainer;
+  - opens the PR ready for review (not as a draft) once the automated checks pass, and moves on
+    to the next task or change;
+  - may archive a change whose only open tasks are manual tests, naming them in the summary.
+
+  Whether to merge without the manual test is the maintainer's call.
 - Check coverage locally with:
 
   ```
