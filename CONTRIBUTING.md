@@ -13,6 +13,9 @@ Thanks for helping with yt-upload-cli! Everything in this repository is written 
    cargo test
    ```
 
+   New code needs tests: CI requires at least **95% line coverage** (see [AGENTS.md](AGENTS.md#testing-and-coverage)).
+   Name branches in English as `<type>/<short-description>`, e.g. `feat/language-flag`.
+
 3. Open a pull request whose **title follows [Conventional Commits](https://www.conventionalcommits.org/)**,
    for example `feat: add --language flag` or `fix(upload): retry failed chunks`.
    PRs are squash-merged, so the title becomes the commit message and the changelog entry.
