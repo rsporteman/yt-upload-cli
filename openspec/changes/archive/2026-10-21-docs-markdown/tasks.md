@@ -17,4 +17,4 @@
 
 - [x] 4.1 Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings`, `cargo test` and the AGENTS.md coverage command; verify all pass
 - [x] 4.2 Open a PR titled `docs: write the docs pages in github markdown`, noting that the URLs are unchanged and the post-merge check is pending; verify CI is green
-- [ ] 4.3 After the maintainer merges it, run `curl -sI` on `https://rsporteman.github.io/yt-upload-cli/`, `.../privacy.html` and `.../terms.html` and open each page; verify all return HTTP 200 with the expected content, and if not, report immediately and propose the revert
+- [x] 4.3 After the maintainer merges it, run `curl -sI` on `https://rsporteman.github.io/yt-upload-cli/`, `.../privacy.html` and `.../terms.html` and open each page; verify all return HTTP 200 with the expected content, and if not, report immediately and propose the revert
