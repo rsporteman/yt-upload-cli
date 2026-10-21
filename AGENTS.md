@@ -22,6 +22,8 @@ that uploads videos to YouTube through the YouTube Data API v3.
   to these pages, so keep the URLs stable.
 - `.github/workflows/`: `ci.yml` (fmt, clippy, tests on Linux/Windows/macOS, coverage gate), `pr-title.yml`
   (Conventional Commits check) and `release.yml` (release-please + binaries).
+- `openspec/`: change proposals (`changes/`) and the accepted specs (`specs/`); see
+  "OpenSpec workflow".
 - `release-please-config.json`, `.release-please-manifest.json`: release automation; the manifest
   holds the last released version and is updated only by release-please.
 
@@ -80,6 +82,27 @@ cargo test
   PR and describe what changed, why, and how it was tested.
 - Agents: don't merge PRs, publish releases, push tags or change repository settings unless the
   maintainer asks explicitly.
+
+## OpenSpec workflow
+
+Changes are planned with [OpenSpec](https://github.com/Fission-AI/OpenSpec) in `openspec/`. Each
+change lives on its own branch and PR, so planning never piles up untracked or on another
+change's branch.
+
+- **Before every propose**, start from an up-to-date `main`:
+
+  ```
+  git switch main
+  git pull --ff-only
+  git switch -c <type>/<change-name>
+  ```
+
+  Then run the propose, commit the change's artifacts (`openspec/changes/<change-name>/`), push,
+  and open the PR from that branch. If `git pull --ff-only` fails or the working tree has
+  uncommitted changes, stop and ask the maintainer instead of stashing, resetting or merging.
+- **Apply** works on that same branch and PR: implementation commits go on top of the artifacts.
+- **Archive** after the PR is merged, again from an up-to-date `main` on a new branch
+  (e.g. `chore/archive-<change-name>`), in its own PR.
 
 ## Versioning and releases
 
