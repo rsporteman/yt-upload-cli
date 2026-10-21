@@ -16,6 +16,10 @@ that uploads videos to YouTube through the YouTube Data API v3.
 
 - `src/lib.rs`: CLI definition (clap) and the YouTube API client (`reqwest`), with unit tests.
   Split into modules when it gets hard to follow (`upload.rs`, ...).
+- `src/accounts.rs`: saved accounts (one per authorized channel) in
+  `<config dir>/accounts/<alias>/{token.json,channel.json}`, alias rules, account selection and
+  migration of the old single `token.json`.
+- `src/env.rs`: environment variables persisted by the OS (fallback for `YT_UPLOAD_CLI_*`).
 - `src/main.rs`: thin binary that wires the CLI to the API client.
 - `src/oauth.rs`: interactive OAuth browser flow (`yup-oauth2`).
 - `docs/`: GitHub Pages site (home, privacy policy, terms). The Google OAuth consent screen links

@@ -12,6 +12,7 @@ yt-upload upload video.mp4 --title "My video" --privacy unlisted --thumbnail cov
 - Scheduled publishing (`--publish-at`)
 - Thumbnail and playlist in the same command
 - Defaults from environment variables, including ones set system-wide
+- Several channels, from one or more Google accounts (`--account`)
 - Your credentials stay on your machine: no server in the middle
 
 ## Install
@@ -36,7 +37,7 @@ You use your own Google Cloud OAuth client, so the quota and the access are your
    Don't upload a logo (that requires Google verification).
 4. **Google Auth Platform → Audience**: choose **External**, then either
    - click **Publish app** (recommended; tokens don't expire), or
-   - add your Google account under **Test users** (tokens expire every 7 days).
+   - add every Google account you will authorize under **Test users** (tokens expire every 7 days).
 5. **Google Auth Platform → Clients → Create client**: type **Desktop app**. Download the JSON.
 6. Save it as `client_secret.json` in the config folder. Find the folder with:
 
@@ -52,9 +53,30 @@ You use your own Google Cloud OAuth client, so the quota and the access are your
    yt-upload auth
    ```
 
-   Your browser opens; pick the account/channel. With a published but unverified app, Google shows
-   "Google hasn't verified this app": click **Advanced → Go to (app name)**.
-   The token is saved next to `client_secret.json`.
+   Your browser opens; pick the Google account, then the channel. With a published but unverified
+   app, Google shows "Google hasn't verified this app": click **Advanced → Go to (app name)**.
+   The authorization is saved in the config folder as the account `default`.
+
+### More channels or Google accounts
+
+Each channel you upload to is a separate **account** with a name you choose. It does not matter
+whether the channels belong to one Google login (brand accounts) or to different ones:
+
+```
+yt-upload auth --account gaming
+yt-upload auth --account music
+yt-upload auth --account work
+yt-upload accounts list
+```
+
+Each `auth` shows Google's account chooser and then its channel picker; the channel you pick is
+recorded with the account. The same channel cannot be saved under two names. `accounts list`
+prints `name`, channel title, channel id and handle, tab-separated.
+
+With one account, commands use it automatically. With more than one, `upload` needs
+`--account <name>` (or `YT_UPLOAD_CLI_ACCOUNT`) and refuses to guess. Remove an account from this
+computer with `yt-upload accounts remove <name>`; to also revoke access, visit
+[myaccount.google.com/permissions](https://myaccount.google.com/permissions).
 
 ## Usage
 
@@ -62,6 +84,7 @@ You use your own Google Cloud OAuth client, so the quota and the access are your
 yt-upload upload talk.mp4 --title "Conference talk" --description "Recorded live" --tags "rust,cli"
 yt-upload upload trailer.mp4 --title "Trailer" --publish-at 2026-10-25T15:00:00Z --playlist PLxxxxxxxx
 yt-upload upload short.mp4 --title "Short" --privacy public --category 10 --made-for-kids
+yt-upload upload vlog.mp4 --title "Vlog" --account work
 ```
 
 Results go to stdout, one line each, so scripts can parse them: `Uploaded: https://youtu.be/<id>`,
@@ -81,13 +104,14 @@ Upload videos to YouTube from the command line
 Usage: yt-upload [OPTIONS] <COMMAND>
 
 Commands:
-  auth        Authorize a YouTube account and show the connected channel
+  auth        Authorize a YouTube channel and save it as an account
   upload      Upload a video
+  accounts    List or remove saved accounts
   config-dir  Print the config folder path
   help        Print this message or the help of the given subcommand(s)
 
 Options:
-      --config-dir <CONFIG_DIR>  Folder holding client_secret.json and the saved token [default: <config dir>/yt-upload-cli] [env: YT_UPLOAD_CLI_HOME]
+      --config-dir <CONFIG_DIR>  Folder holding client_secret.json and the saved accounts [default: <config dir>/yt-upload-cli] [env: YT_UPLOAD_CLI_HOME]
   -h, --help                     Print help
   -V, --version                  Print version
 ```
@@ -103,7 +127,8 @@ Arguments:
   <VIDEO>  Video file to upload
 
 Options:
-      --config-dir <CONFIG_DIR>    Folder holding client_secret.json and the saved token [default: <config dir>/yt-upload-cli] [env: YT_UPLOAD_CLI_HOME]
+      --account <ACCOUNT>          Account to upload with; required when more than one account is saved [env: YT_UPLOAD_CLI_ACCOUNT]
+      --config-dir <CONFIG_DIR>    Folder holding client_secret.json and the saved accounts [default: <config dir>/yt-upload-cli] [env: YT_UPLOAD_CLI_HOME]
   -t, --title <TITLE>              Video title
   -d, --description <DESCRIPTION>  Video description [default: ""]
       --tags <TAGS>                Comma-separated tags [env: YT_UPLOAD_CLI_TAGS] [default: ""]
@@ -124,6 +149,7 @@ Options you repeat on every upload can come from the environment instead:
 | Variable | Option |
 |---|---|
 | `YT_UPLOAD_CLI_HOME` | `--config-dir` |
+| `YT_UPLOAD_CLI_ACCOUNT` | `--account` (`auth` and `upload`) |
 | `YT_UPLOAD_CLI_PRIVACY` | `--privacy` |
 | `YT_UPLOAD_CLI_CATEGORY` | `--category` |
 | `YT_UPLOAD_CLI_TAGS` | `--tags` |

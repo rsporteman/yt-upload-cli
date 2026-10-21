@@ -2,11 +2,13 @@
 //! The interactive OAuth flow lives in the binary (`src/oauth.rs`); everything here is testable
 //! against a mock server.
 
+pub mod accounts;
 pub mod env;
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
+use accounts::Channel;
 use anyhow::{Context, Result, bail};
 use clap::builder::BoolishValueParser;
 use clap::error::ErrorKind;
@@ -33,7 +35,7 @@ const CHUNK_SIZE: usize = 32 * 256 * 1024;
     about = "Upload videos to YouTube from the command line"
 )]
 pub struct Cli {
-    /// Folder holding client_secret.json and the saved token
+    /// Folder holding client_secret.json and the saved accounts
     /// [default: <config dir>/yt-upload-cli]
     #[arg(long, env = "YT_UPLOAD_CLI_HOME", global = true)]
     pub config_dir: Option<PathBuf>,
@@ -44,18 +46,43 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
-    /// Authorize a YouTube account and show the connected channel
-    Auth,
+    /// Authorize a YouTube channel and save it as an account
+    Auth(AuthArgs),
     /// Upload a video
     Upload(Box<UploadArgs>),
+    /// List or remove saved accounts
+    #[command(subcommand)]
+    Accounts(AccountsCommand),
     /// Print the config folder path
     ConfigDir,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct AuthArgs {
+    /// Name to save this account under (lowercase letters, digits, '-' or '_')
+    /// [default: the only saved account, or "default" when there is none]
+    #[arg(long, env = "YT_UPLOAD_CLI_ACCOUNT")]
+    pub account: Option<String>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AccountsCommand {
+    /// Print saved accounts: alias, channel title, channel id and handle, tab-separated
+    List,
+    /// Delete a saved account from this computer
+    Remove {
+        /// Account to remove
+        alias: String,
+    },
 }
 
 #[derive(clap::Args, Debug)]
 pub struct UploadArgs {
     /// Video file to upload
     pub video: PathBuf,
+    /// Account to upload with; required when more than one account is saved
+    #[arg(long, env = "YT_UPLOAD_CLI_ACCOUNT")]
+    pub account: Option<String>,
     /// Video title
     #[arg(short, long)]
     pub title: String,
@@ -103,6 +130,7 @@ impl Privacy {
 }
 
 const HOME_VAR: &str = "YT_UPLOAD_CLI_HOME";
+const ACCOUNT_VAR: &str = "YT_UPLOAD_CLI_ACCOUNT";
 const PRIVACY_VAR: &str = "YT_UPLOAD_CLI_PRIVACY";
 const CATEGORY_VAR: &str = "YT_UPLOAD_CLI_CATEGORY";
 const TAGS_VAR: &str = "YT_UPLOAD_CLI_TAGS";
@@ -132,7 +160,15 @@ where
     if let Some(p) = fallback(&matches, "config_dir", HOME_VAR) {
         cli.config_dir = Some(p.value.into());
     }
+    if let (Command::Auth(args), Some(("auth", m))) = (&mut cli.command, matches.subcommand())
+        && let Some(p) = fallback(m, "account", ACCOUNT_VAR)
+    {
+        args.account = Some(p.value);
+    }
     if let (Command::Upload(args), Some(("upload", m))) = (&mut cli.command, matches.subcommand()) {
+        if let Some(p) = fallback(m, "account", ACCOUNT_VAR) {
+            args.account = Some(p.value);
+        }
         if let Some(p) = fallback(m, "privacy", PRIVACY_VAR) {
             args.privacy = Privacy::from_str(&p.value, true)
                 .map_err(|_| invalid_persisted(PRIVACY_VAR, &p, "private, unlisted, public"))?;
@@ -168,6 +204,7 @@ fn command() -> clap::Command {
     }
     Cli::command()
         .mut_args(unset_if_empty)
+        .mut_subcommand("auth", |s| s.mut_args(unset_if_empty))
         .mut_subcommand("upload", |s| s.mut_args(unset_if_empty))
 }
 
@@ -211,13 +248,20 @@ pub fn client_secret_path(dir: &Path) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// Message shown by `yt-upload auth` for the channels the token can access.
-pub fn auth_message(channels: &[String]) -> String {
-    if channels.is_empty() {
-        "Authorized, but this account has no YouTube channel.".to_owned()
-    } else {
-        format!("Authorized. Channel: {}", channels.join(", "))
+/// Message shown by `yt-upload auth` for the authorized channel.
+pub fn auth_message(channel: &Channel) -> String {
+    format!("Authorized. Channel: {}", channel.title)
+}
+
+/// Makes Google's consent page always show its account chooser, so another Google login can be
+/// picked for a new account; `consent` also gets a refresh token for a login that authorized
+/// the app before.
+pub fn with_account_chooser(url: &str) -> String {
+    if url.contains("prompt=") {
+        return url.to_owned();
     }
+    let sep = if url.contains('?') { '&' } else { '?' };
+    format!("{url}{sep}prompt=select_account%20consent")
 }
 
 /// The `videos.insert` request body for these arguments.
@@ -309,8 +353,8 @@ impl Api {
         })
     }
 
-    /// Names of the channels owned by the authorized account.
-    pub async fn channel_names(&self) -> Result<Vec<String>> {
+    /// The channels the token can access (the one picked at consent time).
+    pub async fn channels(&self) -> Result<Vec<Channel>> {
         let resp = self
             .http
             .get(format!("{}/channels?part=snippet&mine=true", self.api_base))
@@ -322,7 +366,7 @@ impl Api {
             .as_array()
             .into_iter()
             .flatten()
-            .filter_map(|c| c["snippet"]["title"].as_str().map(str::to_owned))
+            .filter_map(Channel::from_api)
             .collect())
     }
 
@@ -592,7 +636,22 @@ mod tests {
     #[test]
     fn parses_other_commands_and_config_dir() {
         let cli = parse(&["--config-dir", "x", "auth"]);
-        assert!(matches!(cli.command, Command::Auth));
+        assert!(matches!(
+            cli.command,
+            Command::Auth(AuthArgs { account: None })
+        ));
+        assert!(matches!(
+            parse(&["auth", "--account", "work"]).command,
+            Command::Auth(a) if a.account.as_deref() == Some("work")
+        ));
+        assert!(matches!(
+            parse(&["accounts", "list"]).command,
+            Command::Accounts(AccountsCommand::List)
+        ));
+        assert!(matches!(
+            parse(&["accounts", "remove", "work"]).command,
+            Command::Accounts(AccountsCommand::Remove { alias }) if alias == "work"
+        ));
         assert_eq!(cli.config_dir, Some(PathBuf::from("x")));
         assert!(matches!(parse(&["config-dir"]).command, Command::ConfigDir));
     }
@@ -708,6 +767,28 @@ mod tests {
     }
 
     #[test]
+    fn account_comes_from_flag_or_os_environment() {
+        let os = [(ACCOUNT_VAR, "os-acct")];
+        let a = upload_of(parse_with(&["upload", "v.mp4", "-t", "T"], &os).unwrap());
+        assert_eq!(a.account.as_deref(), Some("os-acct"));
+        let a = upload_of(
+            parse_with(&["upload", "v.mp4", "-t", "T", "--account", "flag"], &os).unwrap(),
+        );
+        assert_eq!(a.account.as_deref(), Some("flag"));
+        match parse_with(&["auth"], &os).unwrap().command {
+            Command::Auth(a) => assert_eq!(a.account.as_deref(), Some("os-acct")),
+            other => panic!("expected auth, got {other:?}"),
+        }
+        match parse_with(&["auth", "--account", "flag"], &os)
+            .unwrap()
+            .command
+        {
+            Command::Auth(a) => assert_eq!(a.account.as_deref(), Some("flag")),
+            other => panic!("expected auth, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn title_is_never_read_from_the_environment() {
         let err = parse_with(&["upload", "v.mp4"], &[("YT_UPLOAD_CLI_TITLE", "T")]).unwrap_err();
         assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
@@ -758,11 +839,26 @@ mod tests {
 
     #[test]
     fn auth_messages() {
-        assert!(auth_message(&[]).contains("no YouTube channel"));
+        let channel = Channel {
+            id: "UC1".into(),
+            title: "My Channel".into(),
+            handle: None,
+        };
+        assert_eq!(auth_message(&channel), "Authorized. Channel: My Channel");
+    }
+
+    #[test]
+    fn consent_url_shows_the_account_chooser() {
         assert_eq!(
-            auth_message(&["A".into(), "B".into()]),
-            "Authorized. Channel: A, B"
+            with_account_chooser("https://a/auth?scope=x"),
+            "https://a/auth?scope=x&prompt=select_account%20consent"
         );
+        assert_eq!(
+            with_account_chooser("https://a/auth"),
+            "https://a/auth?prompt=select_account%20consent"
+        );
+        let given = "https://a/auth?prompt=none&scope=x";
+        assert_eq!(with_account_chooser(given), given);
     }
 
     #[test]
@@ -846,18 +942,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn lists_channel_names() {
+    async fn lists_channels() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/channels"))
             .and(has_header("authorization", "Bearer tok"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-                "items": [{ "snippet": { "title": "My Channel" } }, { "snippet": {} }]
+                "items": [
+                    { "id": "UC1", "snippet": { "title": "My Channel", "customUrl": "@mine" } },
+                    { "snippet": {} }
+                ]
             })))
             .mount(&server)
             .await;
-        let names = api(&server, 4).await.channel_names().await.unwrap();
-        assert_eq!(names, vec!["My Channel"]);
+        let channels = api(&server, 4).await.channels().await.unwrap();
+        assert_eq!(
+            channels,
+            [Channel {
+                id: "UC1".into(),
+                title: "My Channel".into(),
+                handle: Some("@mine".into())
+            }]
+        );
     }
 
     #[tokio::test]
@@ -869,7 +975,7 @@ mod tests {
             })))
             .mount(&server)
             .await;
-        let err = api(&server, 4).await.channel_names().await.unwrap_err();
+        let err = api(&server, 4).await.channels().await.unwrap_err();
         assert!(err.to_string().contains("(403 Forbidden): quota exceeded"));
     }
 
@@ -883,7 +989,7 @@ mod tests {
             )))
             .mount(&server)
             .await;
-        let err = api(&server, 4).await.channel_names().await.unwrap_err();
+        let err = api(&server, 4).await.channels().await.unwrap_err();
         let api_err = err.downcast_ref::<ApiError>().unwrap();
         assert_eq!(api_err.status, StatusCode::FORBIDDEN);
         assert_eq!(api_err.reason.as_deref(), Some("quotaExceeded"));
@@ -896,7 +1002,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(500).set_body_string("boom"))
             .mount(&server)
             .await;
-        let err = api(&server, 4).await.channel_names().await.unwrap_err();
+        let err = api(&server, 4).await.channels().await.unwrap_err();
         assert!(err.to_string().ends_with(": boom"));
     }
 
