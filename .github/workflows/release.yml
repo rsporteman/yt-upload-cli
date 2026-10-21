@@ -1,0 +1,96 @@
+name: Release
+
+# On every push to main, release-please opens or updates a release PR that bumps the version
+# (SemVer, from Conventional Commits) and updates CHANGELOG.md. Merging that PR creates the tag
+# and the GitHub Release; the jobs below then build the binaries and attach them to it.
+# Everything runs in one workflow because tags created with GITHUB_TOKEN don't trigger others.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  CARGO_TERM_COLOR: always
+  BIN: yt-upload
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      created: ${{ steps.rp.outputs.release_created }}
+      tag: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: rp
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  build:
+    needs: release-please
+    if: needs.release-please.outputs.created == 'true'
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-22.04 }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-22.04-arm }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest }
+          - { target: aarch64-apple-darwin, os: macos-latest }
+          - { target: x86_64-apple-darwin, os: macos-latest }
+    env:
+      TAG: ${{ needs.release-please.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.release-please.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Package
+        shell: bash
+        run: |
+          name="$BIN-$TAG-${{ matrix.target }}"
+          mkdir "$name"
+          cp README.md LICENSE CHANGELOG.md "$name/"
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            cp "target/${{ matrix.target }}/release/$BIN.exe" "$name/"
+            7z a "$name.zip" "$name" > /dev/null
+            echo "ASSET=$name.zip" >> "$GITHUB_ENV"
+          else
+            cp "target/${{ matrix.target }}/release/$BIN" "$name/"
+            tar czf "$name.tar.gz" "$name"
+            echo "ASSET=$name.tar.gz" >> "$GITHUB_ENV"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ env.ASSET }}
+
+  upload:
+    needs: [release-please, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt
+      - name: Attach binaries to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ needs.release-please.outputs.tag }}" dist/* --repo "$GITHUB_REPOSITORY" --clobber
