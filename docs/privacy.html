@@ -17,13 +17,13 @@
 <p>yt-upload-cli asks for access to the user's YouTube account (scopes <code>youtube.upload</code> and <code>youtube</code>) only to upload videos, set thumbnails, add videos to playlists and show the name of the authorized channel.</p>
 
 <h2>Use and storage</h2>
-<p>The OAuth token is stored only on the user's own computer. yt-upload-cli has no servers: no data is sent to the developers, sold, shared with third parties or used for advertising. Videos and their metadata are sent only to YouTube, when the user runs an upload.</p>
+<p>OAuth tokens (one per channel the user authorizes) are stored only on the user's own computer. yt-upload-cli has no servers: no data is sent to the developers, sold, shared with third parties or used for advertising. Videos and their metadata are sent only to YouTube, when the user runs an upload.</p>
 
 <h2>Google API data</h2>
 <p>yt-upload-cli's use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements. By using it you also agree to the <a href="https://www.youtube.com/t/terms">YouTube Terms of Service</a> and the <a href="https://policies.google.com/privacy">Google Privacy Policy</a>.</p>
 
 <h2>Revoking access</h2>
-<p>Access can be revoked at any time at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>. Deleting the local <code>token.json</code> file also removes the stored token.</p>
+<p>Access can be revoked at any time at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>. Removing an account with <code>yt-upload accounts remove &lt;name&gt;</code> (or deleting its folder) also removes its stored token.</p>
 
 <h2>Contact</h2>
 <p>Open an issue at <a href="https://github.com/rsporteman/yt-upload-cli/issues">github.com/rsporteman/yt-upload-cli/issues</a>.</p>
