@@ -30,4 +30,4 @@
 ## 6. Integration checks
 
 - [x] 6.1 Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings`, `cargo test` and `cargo llvm-cov --ignore-filename-regex 'src[\\/](main|oauth)\.rs$' --fail-under-lines 95`; verify all pass
-- [ ] 6.2 Open a PR titled `feat: read config from global environment variables` describing the change, the new `winreg` dependency and how it was tested; verify the CI matrix (Linux/Windows/macOS), coverage and PR-title checks are green
+- [x] 6.2 Open a PR titled `feat: read config from global environment variables` describing the change, the new `winreg` dependency and how it was tested; verify the CI matrix (Linux/Windows/macOS), coverage and PR-title checks are green
