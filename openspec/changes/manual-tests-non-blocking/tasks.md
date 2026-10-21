@@ -8,4 +8,4 @@
 ## 2. Integration checks
 
 - [x] 2.1 Run `cargo fmt --all -- --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` (expected unaffected by a docs-only change); verify all pass
-- [ ] 2.2 Commit on `docs/manual-tests-non-blocking` and open a PR titled `docs: make manual tests non-blocking for agents`; verify CI and the PR-title check are green
+- [x] 2.2 Commit on `docs/manual-tests-non-blocking` and open a PR titled `docs: make manual tests non-blocking for agents`; verify CI and the PR-title check are green
