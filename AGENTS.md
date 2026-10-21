@@ -5,17 +5,22 @@ that uploads videos to YouTube through the YouTube Data API v3.
 
 ## Language
 
-- **Everything in the repository is in English**: code, identifiers, comments, CLI help and error
-  messages, docs, commit messages, PR titles/descriptions, issues and release notes.
+- **Everything in the repository is in English**: file and folder names, branch names, code,
+  identifiers, comments, CLI help and error messages, docs, commit messages, PR
+  titles/descriptions, issues, labels and release notes.
+- Branch names: `<type>/<short-kebab-description>`, using the Conventional Commit types
+  (e.g. `feat/language-flag`, `fix/chunk-retry`).
 - Talking with the maintainer in another language is fine; what lands in the repo is English.
 
 ## Project layout
 
-- `src/main.rs`: the whole CLI (clap commands, OAuth via `yup-oauth2`, REST calls via `reqwest`).
-  Split into modules only when a file gets hard to follow (`auth.rs`, `upload.rs`, ...).
+- `src/lib.rs`: CLI definition (clap) and the YouTube API client (`reqwest`), with unit tests.
+  Split into modules when it gets hard to follow (`upload.rs`, ...).
+- `src/main.rs`: thin binary that wires the CLI to the API client.
+- `src/oauth.rs`: interactive OAuth browser flow (`yup-oauth2`).
 - `docs/`: GitHub Pages site (home, privacy policy, terms). The Google OAuth consent screen links
   to these pages, so keep the URLs stable.
-- `.github/workflows/`: `ci.yml` (fmt, clippy, tests on Linux/Windows/macOS), `pr-title.yml`
+- `.github/workflows/`: `ci.yml` (fmt, clippy, tests on Linux/Windows/macOS, coverage gate), `pr-title.yml`
   (Conventional Commits check) and `release.yml` (release-please + binaries).
 - `release-please-config.json`, `.release-please-manifest.json`: release automation; the manifest
   holds the last released version and is updated only by release-please.
@@ -89,11 +94,22 @@ cargo test
   attaches them with `SHA256SUMS.txt`.
 - To force a specific version, add a `Release-As: X.Y.Z` footer to a commit (PR description).
 
-## Testing
+## Testing and coverage
 
-- Unit-test pure logic (argument handling, request bodies, chunk ranges) without network access.
-- Never hit the real YouTube API in automated tests. Manual tests that upload a video must use
+- **Minimum 95% line coverage**, enforced by the `coverage` CI job (`cargo llvm-cov
+  --fail-under-lines 95`). A PR that drops coverage below 95% cannot be merged. Every new
+  feature or fix comes with tests.
+- Only two files are excluded from coverage: `src/main.rs` (thin wiring) and `src/oauth.rs`
+  (interactive browser flow). Keep logic out of them: put it in `src/lib.rs` (or modules under
+  it) where it can be tested. Don't add new exclusions without the maintainer's approval.
+- Test HTTP calls against a local mock server (`wiremock`) using `Api::with_endpoints`.
+  Never hit the real YouTube API in automated tests. Manual tests that upload a video must use
   `--privacy private` and be cleaned up afterwards.
+- Check coverage locally with:
+
+  ```
+  cargo llvm-cov --ignore-filename-regex 'src[\\/](main|oauth)\.rs$' --fail-under-lines 95 --show-missing-lines
+  ```
 
 ## Documentation
 
