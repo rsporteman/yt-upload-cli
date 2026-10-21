@@ -241,17 +241,30 @@ pub fn video_body(args: &UploadArgs) -> Value {
     })
 }
 
-/// MIME type for a thumbnail file, based on its extension.
-pub fn thumbnail_mime(path: &Path) -> &'static str {
-    match path
+/// Largest thumbnail YouTube accepts.
+const MAX_THUMBNAIL_BYTES: u64 = 2 * 1024 * 1024;
+
+/// Checks the thumbnail before anything is uploaded, so a bad file does not cost an upload,
+/// and returns its MIME type.
+pub fn validate_thumbnail(path: &Path) -> Result<&'static str> {
+    let mime = match path
         .extension()
         .and_then(|e| e.to_str())
         .map(str::to_ascii_lowercase)
         .as_deref()
     {
         Some("png") => "image/png",
-        _ => "image/jpeg",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        _ => bail!("{}: thumbnail must be a JPG or PNG file", path.display()),
+    };
+    let len = std::fs::File::open(path)
+        .and_then(|f| f.metadata())
+        .with_context(|| format!("opening thumbnail {}", path.display()))?
+        .len();
+    if len > MAX_THUMBNAIL_BYTES {
+        bail!("{}: thumbnail exceeds 2 MB", path.display());
     }
+    Ok(mime)
 }
 
 /// An authenticated client for the YouTube Data API.
@@ -309,6 +322,10 @@ impl Api {
     /// Uploads the video, then sets the thumbnail and playlist if requested.
     /// Returns the new video id. Progress goes to stderr.
     pub async fn upload(&self, args: &UploadArgs) -> Result<String> {
+        let thumbnail = match &args.thumbnail {
+            Some(path) => Some((path, validate_thumbnail(path)?)),
+            None => None,
+        };
         let mut file = tokio::fs::File::open(&args.video)
             .await
             .with_context(|| format!("opening {}", args.video.display()))?;
@@ -364,18 +381,37 @@ impl Api {
             .to_owned();
         println!("Uploaded: https://youtu.be/{id}");
 
-        if let Some(thumb) = &args.thumbnail {
-            self.set_thumbnail(&id, thumb).await?;
-            println!("Thumbnail set.");
+        // The video is already up: a thumbnail failure must not skip the playlist, and a
+        // channel that may not set custom thumbnails is not a failure at all.
+        let mut thumbnail_error = None;
+        if let Some((path, mime)) = thumbnail {
+            match self.set_thumbnail(&id, path, mime).await {
+                Ok(()) => println!("Thumbnail set."),
+                Err(e) if is_thumbnail_not_allowed(&e) => eprintln!(
+                    "Warning: thumbnail not set: {e}\n\
+                     Custom thumbnails need a verified channel: https://www.youtube.com/verify"
+                ),
+                Err(e) => thumbnail_error = Some(e.context("setting the thumbnail")),
+            }
         }
         if let Some(playlist) = &args.playlist {
-            self.add_to_playlist(&id, playlist).await?;
-            println!("Added to playlist.");
+            match self.add_to_playlist(&id, playlist).await {
+                Ok(()) => println!("Added to playlist."),
+                Err(e) => {
+                    return Err(match thumbnail_error {
+                        Some(t) => t.context(format!("adding to the playlist also failed: {e}")),
+                        None => e,
+                    });
+                }
+            }
         }
-        Ok(id)
+        match thumbnail_error {
+            Some(e) => Err(e),
+            None => Ok(id),
+        }
     }
 
-    async fn set_thumbnail(&self, video_id: &str, path: &Path) -> Result<()> {
+    async fn set_thumbnail(&self, video_id: &str, path: &Path, mime: &str) -> Result<()> {
         let bytes = tokio::fs::read(path)
             .await
             .with_context(|| format!("opening {}", path.display()))?;
@@ -386,7 +422,7 @@ impl Api {
                 self.upload_base
             ))
             .bearer_auth(&self.token)
-            .header(header::CONTENT_TYPE, thumbnail_mime(path))
+            .header(header::CONTENT_TYPE, mime)
             .body(bytes)
             .send()
             .await?;
@@ -430,18 +466,49 @@ async fn read_full(file: &mut tokio::fs::File, buf: &mut [u8]) -> Result<usize> 
     Ok(filled)
 }
 
-/// Turns an API error response into a readable error with Google's message.
+/// An error response from the YouTube API. Keeps Google's reason code because the status alone
+/// is ambiguous (a 403 can mean "not allowed" or "quota exceeded").
+#[derive(Debug)]
+pub struct ApiError {
+    pub status: StatusCode,
+    pub reason: Option<String>,
+    pub message: String,
+}
+
+impl std::fmt::Display for ApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "YouTube API error ({}): {}", self.status, self.message)
+    }
+}
+
+impl std::error::Error for ApiError {}
+
+/// Whether YouTube refused a thumbnail because the channel may not set custom thumbnails.
+pub fn is_thumbnail_not_allowed(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<ApiError>().is_some_and(|e| {
+        e.status == StatusCode::FORBIDDEN && e.reason.as_deref() == Some("forbidden")
+    })
+}
+
+/// Turns an API error response into an [`ApiError`] with Google's message.
 async fn check(resp: reqwest::Response) -> Result<reqwest::Response> {
     if resp.status().is_success() {
         return Ok(resp);
     }
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
-    let message = serde_json::from_str::<Value>(&text)
+    let error = serde_json::from_str::<Value>(&text)
         .ok()
-        .and_then(|v| v["error"]["message"].as_str().map(str::to_owned))
-        .unwrap_or(text);
-    bail!("YouTube API error ({status}): {message}")
+        .map(|v| v["error"].clone())
+        .unwrap_or_default();
+    let reason = error["errors"][0]["reason"].as_str().map(str::to_owned);
+    let message = error["message"].as_str().map(str::to_owned).unwrap_or(text);
+    Err(ApiError {
+        status,
+        reason,
+        message,
+    }
+    .into())
 }
 
 #[cfg(test)]
@@ -719,10 +786,45 @@ mod tests {
     }
 
     #[test]
-    fn thumbnail_mime_by_extension() {
-        assert_eq!(thumbnail_mime(Path::new("a.PNG")), "image/png");
-        assert_eq!(thumbnail_mime(Path::new("a.jpg")), "image/jpeg");
-        assert_eq!(thumbnail_mime(Path::new("noext")), "image/jpeg");
+    fn validates_thumbnails() {
+        let (_d1, png) = temp_file(b"img", "a.PNG");
+        assert_eq!(validate_thumbnail(&png).unwrap(), "image/png");
+        let (_d2, jpeg) = temp_file(b"img", "a.jpeg");
+        assert_eq!(validate_thumbnail(&jpeg).unwrap(), "image/jpeg");
+
+        let err = |p: &Path| validate_thumbnail(p).unwrap_err().to_string();
+        assert!(err(Path::new("missing.jpg")).contains("opening thumbnail missing.jpg"));
+        let (_d3, webp) = temp_file(b"img", "a.webp");
+        assert!(err(&webp).contains("must be a JPG or PNG"));
+        assert!(err(Path::new("noext")).contains("must be a JPG or PNG"));
+        let big = vec![0u8; MAX_THUMBNAIL_BYTES as usize + 1];
+        let (_d4, big) = temp_file(&big, "big.jpg");
+        assert!(err(&big).contains("exceeds 2 MB"));
+        let max = vec![0u8; MAX_THUMBNAIL_BYTES as usize];
+        let (_d5, max) = temp_file(&max, "max.jpg");
+        assert!(validate_thumbnail(&max).is_ok());
+    }
+
+    #[test]
+    fn thumbnail_refusal_is_told_apart_from_other_errors() {
+        let api_err = |status: u16, reason: Option<&str>| {
+            anyhow::Error::from(ApiError {
+                status: StatusCode::from_u16(status).unwrap(),
+                reason: reason.map(str::to_owned),
+                message: "m".into(),
+            })
+        };
+        assert!(is_thumbnail_not_allowed(&api_err(403, Some("forbidden"))));
+        assert!(is_thumbnail_not_allowed(
+            &api_err(403, Some("forbidden")).context("setting the thumbnail")
+        ));
+        assert!(!is_thumbnail_not_allowed(&api_err(
+            403,
+            Some("quotaExceeded")
+        )));
+        assert!(!is_thumbnail_not_allowed(&api_err(403, None)));
+        assert!(!is_thumbnail_not_allowed(&api_err(500, Some("forbidden"))));
+        assert!(!is_thumbnail_not_allowed(&anyhow::anyhow!("other")));
     }
 
     #[test]
@@ -762,6 +864,22 @@ mod tests {
             .await;
         let err = api(&server, 4).await.channel_names().await.unwrap_err();
         assert!(err.to_string().contains("(403 Forbidden): quota exceeded"));
+    }
+
+    #[tokio::test]
+    async fn api_errors_keep_googles_reason() {
+        let server = MockServer::start().await;
+        Mock::given(path("/channels"))
+            .respond_with(ResponseTemplate::new(403).set_body_json(google_error(
+                "quotaExceeded",
+                "The request cannot be completed because you have exceeded your quota.",
+            )))
+            .mount(&server)
+            .await;
+        let err = api(&server, 4).await.channel_names().await.unwrap_err();
+        let api_err = err.downcast_ref::<ApiError>().unwrap();
+        assert_eq!(api_err.status, StatusCode::FORBIDDEN);
+        assert_eq!(api_err.reason.as_deref(), Some("quotaExceeded"));
     }
 
     #[tokio::test]
@@ -876,22 +994,104 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn upload_reports_missing_thumbnail_file() {
+    async fn invalid_thumbnails_fail_before_uploading() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/videos"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let (_dir, video) = temp_file(b"1", "v.mp4");
+        let (_tdir, webp) = temp_file(b"img", "t.webp");
+        for thumb in ["missing.jpg", webp.to_str().unwrap()] {
+            let args = upload_args(&[video.to_str().unwrap(), "-t", "T", "--thumbnail", thumb]);
+            let err = api(&server, 4).await.upload(&args).await.unwrap_err();
+            assert!(err.to_string().contains(thumb), "{err}");
+        }
+    }
+
+    fn google_error(reason: &str, message: &str) -> Value {
+        json!({ "error": { "message": message, "errors": [{ "reason": reason }] } })
+    }
+
+    /// Uploads a one-byte video with a thumbnail and `--playlist PL1`, where YouTube answers the
+    /// thumbnail with `thumb` and the playlist insert with `playlist_status` (expected once).
+    async fn upload_with_thumbnail(
+        thumb: ResponseTemplate,
+        playlist_status: u16,
+    ) -> Result<String> {
         let server = MockServer::start().await;
         mount_session(&server).await;
         Mock::given(path("/session"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "id": "abc" })))
             .mount(&server)
             .await;
+        Mock::given(path("/thumbnails/set"))
+            .respond_with(thumb)
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(path("/playlistItems"))
+            .respond_with(
+                ResponseTemplate::new(playlist_status)
+                    .set_body_json(google_error("playlistNotFound", "Playlist not found.")),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
         let (_dir, video) = temp_file(b"1", "v.mp4");
+        let (_tdir, thumb) = temp_file(b"img", "t.jpg");
         let args = upload_args(&[
             video.to_str().unwrap(),
             "-t",
             "T",
             "--thumbnail",
-            "missing.jpg",
+            thumb.to_str().unwrap(),
+            "--playlist",
+            "PL1",
         ]);
-        let err = api(&server, 4).await.upload(&args).await.unwrap_err();
-        assert!(err.to_string().contains("missing.jpg"));
+        api(&server, 4).await.upload(&args).await
+    }
+
+    #[tokio::test]
+    async fn thumbnail_not_allowed_is_skipped() {
+        let refused = ResponseTemplate::new(403).set_body_json(google_error(
+            "forbidden",
+            "The authenticated user doesn't have permissions to upload and set custom video thumbnails.",
+        ));
+        assert_eq!(upload_with_thumbnail(refused, 200).await.unwrap(), "abc");
+    }
+
+    #[tokio::test]
+    async fn other_thumbnail_errors_fail_after_the_playlist() {
+        let quota = || {
+            ResponseTemplate::new(403).set_body_json(google_error(
+                "quotaExceeded",
+                "You have exceeded your quota.",
+            ))
+        };
+        let err = upload_with_thumbnail(quota(), 200).await.unwrap_err();
+        assert!(
+            format!("{err:#}").contains(
+                "thumbnail: YouTube API error (403 Forbidden): You have exceeded your quota."
+            ),
+            "{err:#}"
+        );
+
+        let err = upload_with_thumbnail(quota(), 404).await.unwrap_err();
+        let text = format!("{err:#}");
+        assert!(
+            text.contains("Playlist not found.") && text.contains("exceeded your quota"),
+            "{text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn playlist_errors_still_fail_the_upload() {
+        let err = upload_with_thumbnail(ResponseTemplate::new(200), 404)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("Playlist not found."));
     }
 }

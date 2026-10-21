@@ -106,7 +106,10 @@ only by programs started from that shell; yt-upload never reads or runs those fi
   [API audit](https://support.google.com/youtube/contact/yt_api_form), every video uploaded through
   the API is locked to private. Change it in YouTube Studio, or request the audit.
 - **Quota:** the default is 10,000 units/day and an upload costs about 1,600, so roughly 6 uploads a day.
-- Custom thumbnails need a channel with phone verification.
+- Custom thumbnails need a channel with phone verification. The thumbnail file is checked
+  before the upload starts (JPG or PNG, up to 2 MB). If YouTube does not allow custom thumbnails
+  on your channel, the video is still uploaded (and added to the playlist), a warning is printed
+  on stderr and the command exits 0; scripts can check stdout for `Thumbnail set.`.
 
 ## Privacy
 
