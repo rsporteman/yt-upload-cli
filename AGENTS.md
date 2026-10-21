@@ -22,8 +22,9 @@ that uploads videos to YouTube through the YouTube Data API v3.
 - `src/env.rs`: environment variables persisted by the OS (fallback for `YT_UPLOAD_CLI_*`).
 - `src/main.rs`: thin binary that wires the CLI to the API client.
 - `src/oauth.rs`: interactive OAuth browser flow (`yup-oauth2`).
-- `docs/`: GitHub Pages site (home, privacy policy, terms). The Google OAuth consent screen links
-  to these pages, so keep the URLs stable.
+- `docs/`: GitHub Pages site (home, privacy policy, terms) written in GitHub Flavored Markdown;
+  Pages publishes `privacy.md` as `privacy.html`. The Google OAuth consent screen links to these
+  pages, so keep the URLs stable.
 - `.github/workflows/`: `ci.yml` (fmt, clippy, tests on Linux/Windows/macOS, coverage gate), `pr-title.yml`
   (Conventional Commits check) and `release.yml` (release-please + binaries).
 - `openspec/`: change proposals (`changes/`) and the accepted specs (`specs/`); see
@@ -71,7 +72,7 @@ when it is out of date.
 - Never commit, print or log credentials: `client_secret*.json`, `token.json`, access/refresh
   tokens, API keys. They live only in the user's config folder (`yt-upload config-dir`).
 - No telemetry and no servers of our own. The tool talks only to Google APIs. If this ever
-  changes, `docs/privacy.html` must be updated in the same PR.
+  changes, `docs/privacy.md` must be updated in the same PR.
 - Request the minimum OAuth scopes needed. Adding a scope requires updating the privacy policy.
 - Don't use the YouTube or Google logos/branding in the project.
 
@@ -169,4 +170,7 @@ change's branch.
   must update the README prose and examples in the same PR: document new usage, remove usage that
   no longer exists, and fix statements that changed. `cargo test` rejects example commands in
   fenced blocks that no longer parse, but it cannot check the prose.
+- Pages in `docs/` are GitHub Flavored Markdown (`.md`) so they read well on github.com too: no
+  `.html` pages, inline HTML or front matter, and links between pages point to the `.md` files
+  (Pages rewrites them to `.html`). `cargo test` (`tests/docs.rs`) checks this.
 - `CHANGELOG.md` is generated from PR titles, so write titles that make sense to users.
