@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.0](https://github.com/rsporteman/yt-upload-cli/compare/v0.1.0...v0.2.0) (2026-10-21)
+
+
+### Features
+
+* support multiple youtube accounts ([#7](https://github.com/rsporteman/yt-upload-cli/issues/7)) ([72220f0](https://github.com/rsporteman/yt-upload-cli/commit/72220f056f5f951207bab44050b889731c99dc0b))
+
+
+### Documentation
+
+* generate the readme usage section from the cli help ([#9](https://github.com/rsporteman/yt-upload-cli/issues/9)) ([a5ca68c](https://github.com/rsporteman/yt-upload-cli/commit/a5ca68c565cd592f2eaf97f33ab2b7ae2c6c6e45))
+* make manual tests non-blocking for agents ([#11](https://github.com/rsporteman/yt-upload-cli/issues/11)) ([62a49d9](https://github.com/rsporteman/yt-upload-cli/commit/62a49d92b05f9637b6d7e9e42fb27b6ac38390ec))
+* write the docs pages in github markdown ([#8](https://github.com/rsporteman/yt-upload-cli/issues/8)) ([cdfc766](https://github.com/rsporteman/yt-upload-cli/commit/cdfc7664acfcb86791a2882bb93c7eb4dc331dbd))
+
 ## 0.1.0 (2026-10-21)
 
 
